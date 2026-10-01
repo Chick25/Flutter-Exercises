@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+// import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 // import 'catch.dart';
-import 'result_screen.dart';
+// import 'result_screen.dart';
 // import 'result_screen.dart';
 
 void main() async {
@@ -60,6 +60,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   late DateTime _selectedDate;
 
+  late DateTime _focusedWeekStart;
+
   final List<CalendarEvent> _events = [
     CalendarEvent(
       id: '1',
@@ -73,6 +75,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _selectedDate = _today;
+    _focusedWeekStart = _today.subtract(Duration(days: _today.weekday - 1)); // Start of the week (Monday)
+  }
+
+  void _goToPreviousWeek() {
+    setState(() {
+      _focusedWeekStart = _focusedWeekStart.subtract(const Duration(days: 7));
+    });
+  }
+
+  void _goToNextWeek() {
+    setState(() {
+      _focusedWeekStart = _focusedWeekStart.add(const Duration(days: 7));
+    });
   }
 
   List<CalendarEvent> get _eventsForSelectedDate{
@@ -151,16 +166,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           // Your calendar UI elements here
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
             color: Colors.white,
-            child: SizedBox(
-              height: 70,
-              child: ListView.builder(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children:[
+                IconButton(
+                  onPressed: _goToPreviousWeek,
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                Text(
+                  'Tuần của ${DateFormat('dd/MM/yyyy').format(_focusedWeekStart)}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  onPressed: _goToNextWeek,
+                  icon: const Icon(Icons.arrow_forward),
+                ),
+              ],
+            ),
+          ),
+
+          Container(
+            color: Colors.white,
+            height: 80,
+            child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 itemCount: 7, // Display 7 days
                 itemBuilder: (context, index) {
-                  DateTime day = DateTime.now().add(Duration(days: index));
+                  DateTime day = _focusedWeekStart.add(Duration(days: index));
                   bool isSelected = day.year == _selectedDate.year && day.month == _selectedDate.month && day.day == _selectedDate.day;
+                  bool isToday = day.year == _today.year && day.month == _today.month && day.day == _today.day;
+
+                  List<String> weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
                   return GestureDetector(
                     onTap: () {
                       setState(() {
@@ -169,55 +208,71 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     },
                     child: Container(
                       width: 60,
-                      margin: const EdgeInsets.symmetric(horizontal: 4.0),
+                      margin: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
                       decoration: BoxDecoration(
                         color: isSelected ? Colors.blue : Colors.grey[200],
                         borderRadius: BorderRadius.circular(8.0),
                       ),
-                      child: Center(
-                        child: Text(
-                          DateFormat('dd/MM').format(day),
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.black,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            weekDays[index],
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.black,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4.0),
+                          Text(
+                            '${day.day}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          if (isToday)
+                            Container(
+                              width: 4,
+                              height: 4,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   );
                 },
-              ),
-            ),
+              )
           ),
-          const Divider(height: 1),
-
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children:[
-                Text(
-                  'Ngày: ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '(${_eventsForSelectedDate.length} sự kiện)',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-
           Expanded(
             child: _eventsForSelectedDate.isEmpty ? const Center(child: Text('Không có sự kiện nào trong ngày này'),
             ) : ListView.builder(
+              padding: const EdgeInsets.all(8.0),
               itemCount: _eventsForSelectedDate.length,
               itemBuilder: (context, index) {
                 final event = _eventsForSelectedDate[index];
-                return Card(
+                return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: ListTile(
-                    title: Text(event.title),
-                    subtitle: Text('Thời gian: ${event.time}'),
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[100],
+                    borderRadius: BorderRadius.circular(8.0),
+                    border: const Border(
+                      left: BorderSide(color: Colors.blue, width: 4),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      Text('Thời gian: ${event.time}'),
+                    ],
                   ),
                 );
               },
@@ -231,7 +286,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
         onPressed:_showAddEventDialog,
         backgroundColor: Colors.blue,
         child: const Icon(Icons.add, color: Colors.white),
-      )
+      ),
+
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 0,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.calendar_today),
+            label: 'Lịch',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.list),
+            label: 'Danh sách',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings),
+            label: 'Cài đặt',
+          ),
+        ],
+      )  
 
     );
   }
