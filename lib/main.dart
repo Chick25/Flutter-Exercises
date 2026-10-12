@@ -2,13 +2,35 @@ import 'package:flutter/material.dart';
 // import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+// import 'package:path/path.dart' hide context;
+import 'package:project1/nhapDSSV.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'cong2so.dart';
 
-// import 'catch.dart';
-// import 'result_screen.dart';
-// import 'result_screen.dart';
+class HiveHelper {
+  static final String _boxName = 'calendar_events';
+  static Box get _box => Hive.box(_boxName);
+
+  static Future<void> addEvent(Map<String, dynamic> event) async {
+    final String id = event['id'];
+    await _box.put(id, event); 
+  }
+
+  static List<Map<String, dynamic>> queryAllEvents() {
+    final rawValues = _box.values.toList();
+    return rawValues.map((item) {
+      return Map<String, dynamic>.from(item as Map);
+    }).toList();
+  }
+
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Hive.initFlutter();
+  await Hive.openBox('calendar_events');
+
   await initializeDateFormatting('vi_VN', null);
   runApp(const LichCaNhanApp());
 }
@@ -21,10 +43,12 @@ class LichCaNhanApp extends StatelessWidget {
     return MaterialApp(
       title: 'SIMPLE CALENDAR',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 253, 252, 252)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color.fromARGB(255, 253, 252, 252),
+        ),
         useMaterial3: true,
       ),
-    home: const CalendarScreen(),
+      home: const CalendarScreen(),
     );
   }
 }
@@ -36,14 +60,31 @@ class CalendarEvent {
   final String title;
   final DateTime date;
   final String time;
- 
 
   CalendarEvent({
     required this.id,
     required this.title,
     required this.date,
-    required this.time, 
+    required this.time,
   });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'date': date.toIso8601String(),
+      'time': time,
+    };
+  }
+
+  factory CalendarEvent.fromMap(Map<String, dynamic> map) {
+    return CalendarEvent(
+      id: map['id'],
+      title: map['title'],
+      date: DateTime.parse(map['date']),
+      time: map['time'],
+    );
+  }
 }
 
 // ============== MAIN SCREEN (MOBILE) ==============
@@ -62,20 +103,38 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   late DateTime _focusedWeekStart;
 
-  final List<CalendarEvent> _events = [
-    CalendarEvent(
-      id: '1',
-      title: 'Learn Flutter',
-      date: DateTime.now(),
-      time: '10:00 AM',
-    ),
-  ];
+  final List<CalendarEvent> _events = [];
 
   @override
   void initState() {
     super.initState();
     _selectedDate = _today;
-    _focusedWeekStart = _today.subtract(Duration(days: _today.weekday - 1)); // Start of the week (Monday)
+    _focusedWeekStart = _today.subtract(
+      Duration(days: _today.weekday - 1),
+    ); // Start of the week (Monday)
+    _loadEvents();
+  }
+
+  Future<void> _loadEvents() async {
+    final datalist = await HiveHelper.queryAllEvents();
+    setState(() {
+      _events.clear();
+      _events.addAll(
+        datalist.map((data) => CalendarEvent.fromMap(data)).toList(),
+      );
+    });
+  }
+
+  Future<void> _addEventtoDatabase(String title, String time) async {
+    final newEvent = CalendarEvent(
+      id: DateTime.now().toString(),
+      title: title,
+      date: _selectedDate,
+      time: time,
+    );
+
+    await HiveHelper.addEvent(newEvent.toMap());
+    await _loadEvents();
   }
 
   void _goToPreviousWeek() {
@@ -90,11 +149,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
-  List<CalendarEvent> get _eventsForSelectedDate{
-    return _events.where((event){
+  List<CalendarEvent> get _eventsForSelectedDate {
+    return _events.where((event) {
       return event.date.year == _selectedDate.year &&
-             event.date.month == _selectedDate.month &&
-             event.date.day == _selectedDate.day;
+          event.date.month == _selectedDate.month &&
+          event.date.day == _selectedDate.day;
     }).toList();
   }
 
@@ -104,53 +163,49 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: Text('Thêm sự kiện'),
+          title: const Text('Thêm sự kiện'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: titleController,
-                decoration: InputDecoration(
-                  labelText: 'Tiêu đề',
-                ),
+                decoration: const InputDecoration(labelText: 'Tiêu đề'),
               ),
               TextField(
                 controller: timeController,
-                decoration: InputDecoration(
-                  labelText: 'Thời gian',
-                ),
+                readOnly: true,
+                onTap: () async {
+                  final pickedTime = await showTimePicker(
+                    context: dialogContext,
+                    initialTime: TimeOfDay.now()
+                  );
+                  if (pickedTime != null) {
+                    timeController.text = 
+                      '${pickedTime.hour.toString().padLeft(2, '0')}:'
+                      '${pickedTime.minute.toString().padLeft(2, '0')}';
+                  }
+              },
+                decoration: const InputDecoration(labelText: 'Thời gian', suffixIcon: Icon(Icons.access_time)),
               ),
             ],
           ),
-
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Hủy'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (titleController.text.isNotEmpty) {
-                  setState((){
-                    _events.add(
-                      CalendarEvent(
-                        id: DateTime.now().toString(),
-                        title: titleController.text,
-                        date: _selectedDate,
-                        time: timeController.text,
-                      ),
-                    );
-                });
-                // Add event logic here
-                Navigator.pop(context);
-              }
+                  await _addEventtoDatabase(titleController.text, timeController.text);
+                }
+                Navigator.pop(dialogContext);
               },
               child: const Text('Lưu'),
             ),
           ],
-
         );
       },
     );
@@ -159,25 +214,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Calendar'),
-      ),
+      appBar: AppBar(title: Text('Calendar')),
       body: Column(
         children: [
           // Your calendar UI elements here
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+            padding: const EdgeInsets.symmetric(
+              vertical: 8.0,
+              horizontal: 12.0,
+            ),
             color: Colors.white,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children:[
+              children: [
                 IconButton(
                   onPressed: _goToPreviousWeek,
                   icon: const Icon(Icons.arrow_back),
                 ),
                 Text(
                   'Tuần của ${DateFormat('dd/MM/yyyy').format(_focusedWeekStart)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 IconButton(
                   onPressed: _goToNextWeek,
@@ -191,99 +250,124 @@ class _CalendarScreenState extends State<CalendarScreen> {
             color: Colors.white,
             height: 80,
             child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: 7, // Display 7 days
-                itemBuilder: (context, index) {
-                  DateTime day = _focusedWeekStart.add(Duration(days: index));
-                  bool isSelected = day.year == _selectedDate.year && day.month == _selectedDate.month && day.day == _selectedDate.day;
-                  bool isToday = day.year == _today.year && day.month == _today.month && day.day == _today.day;
-
-                  List<String> weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedDate = day;
-                      });
-                    },
-                    child: Container(
-                      width: 60,
-                      margin: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0),
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.blue : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            weekDays[index],
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : Colors.black,
-                            ),
-                          ),
-                          const SizedBox(height: 4.0),
-                          Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected ? Colors.white : Colors.black,
-                            ),
-                          ),
-                          if (isToday)
-                            Container(
-                              width: 4,
-                              height: 4,
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              )
-          ),
-          Expanded(
-            child: _eventsForSelectedDate.isEmpty ? const Center(child: Text('Không có sự kiện nào trong ngày này'),
-            ) : ListView.builder(
-              padding: const EdgeInsets.all(8.0),
-              itemCount: _eventsForSelectedDate.length,
+              scrollDirection: Axis.horizontal,
+              itemCount: 7, // Display 7 days
               itemBuilder: (context, index) {
-                final event = _eventsForSelectedDate[index];
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  padding: const EdgeInsets.all(16.0),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[100],
-                    borderRadius: BorderRadius.circular(8.0),
-                    border: const Border(
-                      left: BorderSide(color: Colors.blue, width: 4),
+                DateTime day = _focusedWeekStart.add(Duration(days: index));
+                bool isSelected =
+                    day.year == _selectedDate.year &&
+                    day.month == _selectedDate.month &&
+                    day.day == _selectedDate.day;
+                bool isToday =
+                    day.year == _today.year &&
+                    day.month == _today.month &&
+                    day.day == _today.day;
+
+                List<String> weekDays = [
+                  'T2',
+                  'T3',
+                  'T4',
+                  'T5',
+                  'T6',
+                  'T7',
+                  'CN',
+                ];
+
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedDate = day;
+                    });
+                  },
+                  child: Container(
+                    width: 60,
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 4.0,
+                      vertical: 8.0,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        event.title,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      Text('Thời gian: ${event.time}'),
-                    ],
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.blue : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          weekDays[index],
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : Colors.black,
+                          ),
+                        ),
+                        const SizedBox(height: 4.0),
+                        Text(
+                          '${day.day}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? Colors.white : Colors.black,
+                          ),
+                        ),
+                        if (isToday)
+                          Container(
+                            width: 4,
+                            height: 4,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },
             ),
-          )
-
+          ),
+          Expanded(
+            child: _eventsForSelectedDate.isEmpty
+                ? const Center(
+                    child: Text('Không có sự kiện nào trong ngày này'),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(8.0),
+                    itemCount: _eventsForSelectedDate.length,
+                    itemBuilder: (context, index) {
+                      final event = _eventsForSelectedDate[index];
+                      return Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 16.0,
+                          vertical: 8.0,
+                        ),
+                        padding: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[100],
+                          borderRadius: BorderRadius.circular(8.0),
+                          border: const Border(
+                            left: BorderSide(color: Colors.blue, width: 4),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              event.title,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text('Thời gian: ${event.time}'),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
 
       floatingActionButton: FloatingActionButton(
-        onPressed:_showAddEventDialog,
+        onPressed: _showAddEventDialog,
         backgroundColor: Colors.blue,
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -295,21 +379,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
             icon: Icon(Icons.calendar_today),
             label: 'Lịch',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.list),
-            label: 'Danh sách',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings),
-            label: 'Cài đặt',
-          ),
+          NavigationDestination(icon: Icon(Icons.list), label: 'Danh sách'),
+          NavigationDestination(icon: Icon(Icons.settings), label: 'Cài đặt'),
         ],
-      )  
-
+      ),
     );
   }
-
-
-
 }
-
