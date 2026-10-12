@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 // import 'package:path/path.dart' hide context;
-import 'package:project1/nhapDSSV.dart';
+// import 'package:project1/nhapDSSV.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'cong2so.dart';
+// import 'cong2so.dart';
 
 class HiveHelper {
   static final String _boxName = 'calendar_events';
@@ -60,12 +60,16 @@ class CalendarEvent {
   final String title;
   final DateTime date;
   final String time;
+  final String status;
+  final String reviewNote;
 
   CalendarEvent({
     required this.id,
     required this.title,
     required this.date,
     required this.time,
+    this.status = 'pending',
+    this.reviewNote = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -74,6 +78,8 @@ class CalendarEvent {
       'title': title,
       'date': date.toIso8601String(),
       'time': time,
+      'status': status,
+      'reviewNote': reviewNote,
     };
   }
 
@@ -83,6 +89,8 @@ class CalendarEvent {
       title: map['title'],
       date: DateTime.parse(map['date']),
       time: map['time'],
+      status: map['status'] ?? 'pending',
+      reviewNote: map['reviewNote'] ?? '',
     );
   }
 }
@@ -137,6 +145,72 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await _loadEvents();
   }
 
+  Future<void> _showReviewDialog(CalendarEvent event) async{
+    final noteController = TextEditingController(text: event.reviewNote);
+    String selectedStatus = event.status;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text('Đánh giá sự kiện'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedStatus,
+                  decoration: const InputDecoration(labelText: 'Trạng thái'),
+                  items: const [
+                    DropdownMenuItem(value: 'pending', child: Text('Chưa hoàn thành')),
+                    DropdownMenuItem(value: 'completed', child: Text('Hoàn thành')),
+                    DropdownMenuItem(value: 'partially_completed', child: Text('Một phần hoàn thành')),
+                    DropdownMenuItem(value: 'notCompleted', child: Text('Chưa hoàn thành')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null){
+                      setState(() {
+                        selectedStatus = value;
+                      });
+                    }
+                  }
+                ),
+                TextField(
+                  controller: noteController,
+                  decoration: const InputDecoration(labelText: 'Ghi chú', hintText: 'Ví dụ: Hoàn thành phần chính, còn thiếu...'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Hủy'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final updatedEvent = CalendarEvent(
+                    id: event.id,
+                    title: event.title,
+                    date: event.date,
+                    time: event.time,
+                    status: selectedStatus,
+                    reviewNote: noteController.text,
+                  );
+
+                  await HiveHelper.addEvent(updatedEvent.toMap());
+                  await _loadEvents();
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Lưu'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+
   void _goToPreviousWeek() {
     setState(() {
       _focusedWeekStart = _focusedWeekStart.subtract(const Duration(days: 7));
@@ -155,6 +229,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
           event.date.month == _selectedDate.month &&
           event.date.day == _selectedDate.day;
     }).toList();
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'pending':
+        return 'Chưa hoàn thành';
+      case 'completed':
+        return 'Hoàn thành';
+      case 'partially_completed':
+        return 'Một phần hoàn thành';
+      case 'notCompleted':
+        return 'Chưa hoàn thành';
+      default:
+        return '';
+    }
   }
 
   void _showAddEventDialog() {
@@ -210,6 +299,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       },
     );
   }
+
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -357,6 +449,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               ),
                             ),
                             Text('Thời gian: ${event.time}'),
+                            Text('Trạng thái: ${_statusLabel(event.status)}'),
+                              if (event.reviewNote.isNotEmpty)
+                                Text('Ghi chú: ${event.reviewNote}'),
+                              TextButton.icon(
+                                onPressed: () => _showReviewDialog(event),
+                                icon: const Icon(Icons.rate_review),
+                                label: const Text('Đánh giá'),
+                              ),
                           ],
                         ),
                       );
